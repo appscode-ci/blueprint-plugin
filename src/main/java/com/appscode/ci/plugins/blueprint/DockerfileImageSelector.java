@@ -1,4 +1,4 @@
-package com.cloudbees.jenkins.plugins.docker_build_env;
+package com.appscode.ci.plugins.blueprint;
 
 import hudson.Extension;
 import hudson.FilePath;
@@ -8,7 +8,6 @@ import hudson.model.Job;
 import hudson.model.TaskListener;
 import org.kohsuke.stapler.DataBoundConstructor;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;

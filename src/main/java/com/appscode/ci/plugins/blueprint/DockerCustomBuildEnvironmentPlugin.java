@@ -1,4 +1,4 @@
-package com.cloudbees.jenkins.plugins.docker_build_env;
+package com.appscode.ci.plugins.blueprint;
 
 import hudson.Extension;
 import hudson.Plugin;
@@ -11,6 +11,6 @@ import hudson.model.Items;
 public class DockerCustomBuildEnvironmentPlugin extends Plugin {
 
     static {
-        Items.XSTREAM2.aliasPackage("com.cloudbees.jenkins.plugins.okidocki", "com.cloudbees.jenkins.plugins.docker_build_env");
+        Items.XSTREAM2.aliasPackage("com.cloudbees.jenkins.plugins.okidocki", "com.appscode.ci.plugins.blueprint");
     }
 }

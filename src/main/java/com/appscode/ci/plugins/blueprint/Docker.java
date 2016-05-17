@@ -1,4 +1,4 @@
-package com.cloudbees.jenkins.plugins.docker_build_env;
+package com.appscode.ci.plugins.blueprint;
 
 import hudson.EnvVars;
 import hudson.FilePath;
@@ -12,8 +12,6 @@ import org.apache.commons.io.output.TeeOutputStream;
 import org.apache.commons.lang.StringUtils;
 
 import org.jenkinsci.plugins.docker.commons.credentials.DockerRegistryEndpoint;
-import org.jenkinsci.plugins.docker.commons.credentials.DockerServerEndpoint;
-import org.jenkinsci.plugins.docker.commons.credentials.KeyMaterial;
 import org.jenkinsci.plugins.docker.commons.tools.DockerTool;
 
 import java.io.ByteArrayOutputStream;

@@ -1,4 +1,4 @@
-package com.cloudbees.jenkins.plugins.docker_build_env;
+package com.appscode.ci.plugins.blueprint;
 
 import hudson.EnvVars;
 import hudson.model.AbstractBuild;
@@ -45,7 +45,7 @@ public class BuiltInContainer implements BuildBadgeAction, EnvironmentContributi
     }
 
     public String getIconFileName() {
-        return "/plugin/cloudbees-docker-custom-build-environment/docker-badge.png";
+        return "/plugin/appscode-blueprint/docker-badge.png";
     }
 
     public String getImage() {

@@ -1,4 +1,4 @@
-package com.cloudbees.jenkins.plugins.docker_build_env;
+package com.appscode.ci.plugins.blueprint;
 
 import hudson.Extension;
 import hudson.maven.TcpSocketHostLocator;
