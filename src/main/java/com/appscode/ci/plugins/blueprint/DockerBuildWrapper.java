@@ -1,40 +1,22 @@
 package com.appscode.ci.plugins.blueprint;
 
-import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.cloudbees.plugins.credentials.common.StandardCredentials;
-import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
-import com.cloudbees.plugins.credentials.domains.DomainRequirement;
+import com.appscode.ci.model.blueprint.Job;
+import com.appscode.ci.model.blueprint.Job.Docker.Volume;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.Launcher;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.BuildListener;
-import hudson.model.Computer;
-import hudson.model.Descriptor;
-import hudson.model.Item;
-import hudson.model.Run;
-import hudson.model.TaskListener;
+import hudson.Util;
+import hudson.model.*;
 import hudson.remoting.Callable;
 import hudson.tasks.BuildWrapper;
 import hudson.tasks.BuildWrapperDescriptor;
-import hudson.util.ListBoxModel;
-import jenkins.authentication.tokens.api.AuthenticationTokens;
-import jenkins.model.Jenkins;
 import jenkins.security.MasterToSlaveCallable;
-import org.jenkinsci.plugins.docker.commons.credentials.DockerRegistryToken;
-import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.QueryParameter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.File;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -46,115 +28,40 @@ import static org.apache.commons.lang.StringUtils.isEmpty;
  */
 public class DockerBuildWrapper extends BuildWrapper {
 
-    private final DockerImageSelector selector;
-
-    private final String dockerInstallation;
-
-    private final DockerServerEndpoint dockerHost;
-
-    private final String dockerRegistryCredentials;
-
-    private final boolean verbose;
-
-    private List<Volume> volumes;
-
-    private final boolean privileged;
-
-    private String group;
-
-    private String command;
-
-    private final boolean forcePull;
-
-    private String net;
-
-    private String memory;
-
-    private String cpu;
+    private transient Job blueprint;
 
     @DataBoundConstructor
-    public DockerBuildWrapper(DockerImageSelector selector, String dockerInstallation, DockerServerEndpoint dockerHost, String dockerRegistryCredentials, boolean verbose, boolean privileged,
-                              List<Volume> volumes, String group, String command,
-                              boolean forcePull,
-                              String net, String memory, String cpu) {
-        this.selector = selector;
-        this.dockerInstallation = dockerInstallation;
-        this.dockerHost = dockerHost;
-        this.dockerRegistryCredentials = dockerRegistryCredentials;
-        this.verbose = verbose;
-        this.privileged = privileged;
-        this.volumes = volumes != null ? volumes : Collections.<Volume>emptyList();
-        this.group = group;
-        this.command = command;
-        this.forcePull = forcePull;
-        this.net = net;
-        this.memory = memory;
-        this.cpu = cpu;
+    public DockerBuildWrapper() {
     }
-
-    public DockerImageSelector getSelector() {
-        return selector;
-    }
-
-    public String getDockerInstallation() {
-        return dockerInstallation;
-    }
-
-    public DockerServerEndpoint getDockerHost() {
-        return dockerHost;
-    }
-
-    public String getDockerRegistryCredentials() {
-        return dockerRegistryCredentials;
-    }
-
-    public boolean isVerbose() {
-        return verbose;
-    }
-
-    public boolean isPrivileged() {
-        return privileged;
-    }
-
-    public List<Volume> getVolumes() {
-        return volumes;
-    }
-
-    public String getGroup() {
-        return group;
-    }
-
-    public String getCommand() {
-        return command;
-    }
-
-    public boolean isForcePull() {
-        return forcePull;
-    }
-
-    public String getNet() { return net;}
-
-    public String getMemory() { return memory;}
-
-    public String getCpu() { return cpu;}
 
     @Override
     public Launcher decorateLauncher(final AbstractBuild build, final Launcher launcher, final BuildListener listener) throws IOException, InterruptedException, Run.RunnerAbortedException {
-        final Docker docker = new Docker(dockerHost, dockerInstallation, dockerRegistryCredentials, build, launcher, listener, verbose, privileged);
-
-        final BuiltInContainer runInContainer = new BuiltInContainer(docker);
+        final BuiltInContainer runInContainer = new BuiltInContainer();
         build.addAction(runInContainer);
 
-        DockerDecoratedLauncher decorated = new DockerDecoratedLauncher(selector, launcher, runInContainer, build, whoAmI(launcher));
+        DockerLauncher decorated = new DockerLauncher(launcher, runInContainer, build);
         return decorated;
     }
 
     @Override
     public Environment setUp(AbstractBuild build, final Launcher launcher, BuildListener listener) throws IOException, InterruptedException {
-
         // setUp is executed after checkout, so hook here to prepare and run Docker image to host the build
+        blueprint = Blueprints.loadJob(build);
+        if (blueprint.getDocker() == null) {
+            throw new NullPointerException("Job blueprint is not configured run inside Docker.");
+        }
+        if (Util.fixEmpty(blueprint.getDocker().getImage()) == null
+            && Util.fixEmpty(blueprint.getDocker().getImageDockerfile()) == null) {
+            throw new NullPointerException("Job blueprint does not specify image or imageDockerFile.");
+        }
+
+        if (Util.fixEmpty(blueprint.getDocker().getCommand()) == null) {
+            blueprint.getDocker().setCommand("/bin/cat");
+        }
 
         BuiltInContainer runInContainer = build.getAction(BuiltInContainer.class);
+        runInContainer.setUserId(whoAmI(launcher));
+        runInContainer.setDocker(new Docker(build, launcher, listener, blueprint.getDocker().isVerbose(), blueprint.getDocker().isPrivileged()));
 
         // mount slave root in Docker container so build process can access project workspace, tools, as well as jars copied by maven plugin.
         final String root = Computer.currentComputer().getNode().getRootPath().getRemote();
@@ -164,18 +71,23 @@ public class DockerBuildWrapper extends BuildWrapper {
         String tmp = build.getWorkspace().act(GetTmpdir);
         runInContainer.bindMount(tmp);
 
-        // mount ToolIntallers installation directory so installed tools are available inside container
+        // Mount directories so installed tools are available inside container
+        Set<Job.Docker.Volume> volumes = new HashSet<Job.Docker.Volume>();
+        if (blueprint.getDocker().getVolumes() != null) {
+            volumes.addAll(blueprint.getDocker().getVolumes());
+        }
+
+        String buildDataPath = build.getWorkspace().act(new BuildDataDirCreator(build.getUrl()));
+        volumes.add(new Volume(buildDataPath, "/mnt/build-data"));
 
         for (Volume volume : volumes) {
             runInContainer.bindMount(volume.getHostPath(), volume.getPath());
         }
 
-        runInContainer.getDocker().setupCredentials(build);
-
         if (runInContainer.container == null) {
             if (runInContainer.image == null) {
                 try {
-                    runInContainer.image = selector.prepareDockerImage(runInContainer.getDocker(), build, listener, forcePull);
+                    runInContainer.image = Blueprints.prepareDockerImage(blueprint, runInContainer.getDocker(), build, listener);
                 } catch (InterruptedException e) {
                     throw new RuntimeException("Interrupted");
                 }
@@ -196,8 +108,6 @@ public class DockerBuildWrapper extends BuildWrapper {
         };
     }
 
-
-
     private String startBuildContainer(BuiltInContainer runInContainer, AbstractBuild build, BuildListener listener) throws IOException {
         try {
             EnvVars environment = buildContainerEnvironment(build, listener);
@@ -206,11 +116,11 @@ public class DockerBuildWrapper extends BuildWrapper {
 
             Map<String, String> links = new HashMap<String, String>();
 
-            String[] command = this.command.length() > 0 ? this.command.split(" ") : new String[0];
+            String[] command = blueprint.getDocker().getCommand().length() > 0 ? blueprint.getDocker().getCommand().split(" ") : new String[0];
 
             return runInContainer.getDocker().runDetached(runInContainer.image, workdir,
                     runInContainer.getVolumes(build), runInContainer.getPortsMap(), links,
-                    environment, build.getSensitiveBuildVariables(), net, memory, cpu,
+                    environment, build.getSensitiveBuildVariables(), blueprint.getDocker().getNet(), blueprint.getDocker().getMemory(), blueprint.getDocker().getCpu(),
                     command); // Command expected to hung until killed
 
         } catch (InterruptedException e) {
@@ -225,6 +135,7 @@ public class DockerBuildWrapper extends BuildWrapper {
      */
     private EnvVars buildContainerEnvironment(AbstractBuild build, BuildListener listener) throws IOException, InterruptedException {
         EnvVars env = build.getEnvironment(listener);
+
         for (String key : Computer.currentComputer().getEnvironment().keySet()) {
             env.remove(key);
         }
@@ -238,14 +149,13 @@ public class DockerBuildWrapper extends BuildWrapper {
         launcher.launch().cmds("id", "-u").stdout(bos).quiet(true).join();
         String uid = bos.toString().trim();
 
-        String gid = group;
-        if (isEmpty(group)) {
+        String gid = blueprint.getDocker().getGroup();
+        if (isEmpty(blueprint.getDocker().getGroup())) {
             ByteArrayOutputStream bos2 = new ByteArrayOutputStream();
             launcher.launch().cmds("id", "-g").stdout(bos2).quiet(true).join();
             gid = bos2.toString().trim();
         }
-        return uid+":"+gid;
-
+        return uid + ":" + gid;
     }
 
     @Extension
@@ -256,29 +166,10 @@ public class DockerBuildWrapper extends BuildWrapper {
             return "Build inside a Docker container";
         }
 
-        public Collection<Descriptor<DockerImageSelector>> selectors() {
-            return Jenkins.getInstance().getDescriptorList(DockerImageSelector.class);
-        }
-
         @Override
         public boolean isApplicable(AbstractProject<?, ?> item) {
             return true;
         }
-
-        public ListBoxModel doFillDockerRegistryCredentialsItems(@AncestorInPath Item item, @QueryParameter String uri) {
-            return new StandardListBoxModel()
-                    .withEmptySelection()
-                    .withMatching(AuthenticationTokens.matcher(DockerRegistryToken.class),
-                            CredentialsProvider.lookupCredentials(
-                                    StandardCredentials.class,
-                                    item,
-                                    null,
-                                    Collections.<DomainRequirement>emptyList()
-                            )
-                    );
-
-        }
-
     }
 
     private static Callable<String, IOException> GetTmpdir = new MasterToSlaveCallable<String, IOException>() {
@@ -288,19 +179,28 @@ public class DockerBuildWrapper extends BuildWrapper {
         }
     };
 
+    private static final class BuildDataDirCreator extends MasterToSlaveCallable<String, IOException> {
+        private String buildUrl;
+
+        public BuildDataDirCreator(String buildUrl) {
+            this.buildUrl = buildUrl;
+        }
+
+        @Override
+        public String call() {
+            // e.g.: buildUrl = job/jetty-demo/7/
+            int index = buildUrl.indexOf("job/");
+            if (index == -1) {
+                return null;
+            }
+            buildUrl = buildUrl.substring(index + "job/".length());
+            index = buildUrl.indexOf("/");
+            String path = "/mnt/ci-data/" + (index == -1 ? "" : buildUrl.substring(index + 1)) + "build-data";
+            boolean created = new File(path).mkdirs();
+            System.out.println(created ? "Build data dir is created" : "WARNING!!! Build data dir failed to create.");
+            return path;
+        }
+    };
 
     private static final Logger LOGGER = Logger.getLogger(DockerBuildWrapper.class.getName());
-
-    // --- backward compatibility
-
-    private transient boolean exposeDocker;
-
-    private Object readResolve() {
-        if (volumes == null) volumes = new ArrayList<Volume>();
-        if (exposeDocker) {
-            this.volumes.add(new Volume("/var/run/docker.sock","/var/run/docker.sock"));
-        }
-        if (command == null) command = "/bin/cat";
-        return this;
-    }
 }

@@ -39,17 +39,15 @@ public class Docker implements Closeable {
     private final Launcher launcher;
     private final TaskListener listener;
     private final String dockerExecutable;
-    private final DockerServerEndpoint dockerHost;
     private final DockerRegistryEndpoint registryEndpoint;
     private final boolean verbose;
     private final boolean privileged;
     private final AbstractBuild build;
     private EnvVars envVars;
 
-    public Docker(DockerServerEndpoint dockerHost, String dockerInstallation, String credentialsId, AbstractBuild build, Launcher launcher, TaskListener listener, boolean verbose, boolean privileged) throws IOException, InterruptedException {
-        this.dockerHost = dockerHost;
-        this.dockerExecutable = DockerTool.getExecutable(dockerInstallation, Computer.currentComputer().getNode(), listener, build.getEnvironment(listener));
-        this.registryEndpoint = new DockerRegistryEndpoint(null, credentialsId);
+    public Docker(AbstractBuild build, Launcher launcher, TaskListener listener, boolean verbose, boolean privileged) throws IOException, InterruptedException {
+        this.dockerExecutable = DockerTool.getExecutable(null, Computer.currentComputer().getNode(), listener, build.getEnvironment(listener));
+        this.registryEndpoint = new DockerRegistryEndpoint(null, null);
         this.launcher = launcher;
         this.listener = listener;
         this.build = build;
@@ -57,19 +55,8 @@ public class Docker implements Closeable {
         this.privileged = privileged;
     }
 
-
-    private KeyMaterial dockerEnv;
-
-    public void setupCredentials(AbstractBuild build) throws IOException, InterruptedException {
-        this.dockerEnv = dockerHost.newKeyMaterialFactory(build)
-                .plus(   registryEndpoint.newKeyMaterialFactory(build))
-                .materialize();
-    }
-
-
     @Override
     public void close() throws IOException {
-        dockerEnv.close();
     }
 
     public boolean hasImage(String image) throws IOException, InterruptedException {
@@ -88,7 +75,7 @@ public class Docker implements Closeable {
 
     private EnvVars getEnvVars() throws IOException, InterruptedException {
         if (envVars == null) {
-            envVars = new EnvVars(build.getEnvironment(listener)).overrideAll(dockerEnv.env());
+            envVars = new EnvVars(build.getEnvironment(listener));
         }
         return envVars;
     }
@@ -108,7 +95,6 @@ public class Docker implements Closeable {
 
 
     public String buildImage(FilePath workspace, String dockerfile, boolean forcePull) throws IOException, InterruptedException {
-
         ArgumentListBuilder args = dockerCommand()
             .add("build");
 
@@ -172,9 +158,7 @@ public class Docker implements Closeable {
     }
 
     public String runDetached(String image, String workdir, Map<String, String> volumes, Map<Integer, Integer> ports, Map<String, String> links, EnvVars environment, Set sensitiveBuildVariables, String net, String memory, String cpu, String... command) throws IOException, InterruptedException {
-
         String docker0 = getDocker0Ip(launcher, image);
-
 
         ArgumentListBuilder args = dockerCommand()
             .add("run", "--tty", "--detach");
@@ -220,6 +204,7 @@ public class Docker implements Closeable {
                 args.add(e.getKey()+"="+e.getValue());
         }
         args.add(image).add(command);
+        listener.getLogger().println(args.toString());
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
@@ -359,10 +344,6 @@ public class Docker implements Closeable {
     private List<String> dockerCommandArgs() {
         List<String> args = new ArrayList<String>();
         args.add(dockerExecutable);
-        if (dockerHost.getUri() != null) {
-            args.add("-H");
-            args.add(dockerHost.getUri());
-        }
         return args;
     }
 }

@@ -23,13 +23,20 @@ public class BuiltInContainer implements BuildBadgeAction, EnvironmentContributi
 
     /* package */ transient String container;
 
+    private transient String userId;
     private transient boolean enable;
-    private final transient Docker docker;
+    private transient Docker docker;
     private List<Integer> ports = new ArrayList<Integer>();
     private Map<String,String> volumes = new HashMap<String,String>();
 
-    public BuiltInContainer(Docker docker) {
-        this.docker = docker;
+    public BuiltInContainer() {}
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 
     public void enable() {
@@ -62,6 +69,10 @@ public class BuiltInContainer implements BuildBadgeAction, EnvironmentContributi
 
     Docker getDocker() {
         return docker;
+    }
+
+    public void setDocker(Docker docker) {
+        this.docker = docker;
     }
 
     public boolean tearDown() throws IOException, InterruptedException {
