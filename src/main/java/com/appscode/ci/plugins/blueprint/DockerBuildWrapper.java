@@ -78,7 +78,13 @@ public class DockerBuildWrapper extends BuildWrapper {
         }
 
         String buildDataPath = build.getWorkspace().act(new BuildDataDirCreator(build.getUrl()));
-        volumes.add(new Volume(buildDataPath, "/mnt/build-data"));
+        volumes.add(new Volume(buildDataPath,                  "/mnt/build-data"));
+        volumes.add(new Volume("/var/lib/jenkins/.ssh",        "/root/.ssh"));
+        volumes.add(new Volume("/var/lib/jenkins/.appscode",   "/root/.appscode"));
+        volumes.add(new Volume("/var/lib/jenkins/.gitconfig",  "/root/.gitconfig"));
+        volumes.add(new Volume("/var/lib/jenkins/.kube",       "/root/.kube"));
+        volumes.add(new Volume("/usr/local/bin/kubectl",       "/usr/local/bin/kubectl"));
+        volumes.add(new Volume("/usr/local/bin/appctl",        "/usr/local/bin/appctl"));
 
         for (Volume volume : volumes) {
             runInContainer.bindMount(volume.getHostPath(), volume.getPath());
