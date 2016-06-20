@@ -52,7 +52,7 @@ public class BuiltInContainer implements BuildBadgeAction, EnvironmentContributi
     }
 
     public String getIconFileName() {
-        return "/plugin/appscode-blueprint/docker-badge.png";
+        return null;
     }
 
     public String getImage() {
@@ -64,7 +64,7 @@ public class BuiltInContainer implements BuildBadgeAction, EnvironmentContributi
     }
 
     public String getUrlName() {
-        return "/docker";
+        return null;
     }
 
     Docker getDocker() {
