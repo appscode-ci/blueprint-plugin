@@ -61,6 +61,12 @@ public class DockerLauncher extends Launcher.DecoratedLauncher {
         for (Environment e : build.getEnvironments()) {
             e.buildEnvVars(environment);
         }
+        String originalPath = env.get("PATH", "");
+        String currentPath = environment.get("PATH", "");
+        if (!currentPath.equals(originalPath) && !originalPath.isEmpty()) {
+            this.getListener().error("PATH can't be changed by build wrappers");
+            environment.override("PATH", originalPath);
+        }
 
         return environment;
     }
