@@ -127,7 +127,7 @@ public class DockerBuildWrapper extends BuildWrapper {
 
             return runInContainer.getDocker().runDetached(runInContainer.image, workdir,
                     runInContainer.getVolumes(build), runInContainer.getPortsMap(), links,
-                    environment, build.getSensitiveBuildVariables(), blueprint.getDocker().getNet(), blueprint.getDocker().getMemory(), blueprint.getDocker().getCpu(),
+                    environment, build.getSensitiveBuildVariables(), /*blueprint.getDocker().getNet()*/ "host", blueprint.getDocker().getMemory(), blueprint.getDocker().getCpu(),
                     command); // Command expected to hung until killed
 
         } catch (InterruptedException e) {
